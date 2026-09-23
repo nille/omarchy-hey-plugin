@@ -17,9 +17,23 @@ Item {
   property var results: []
   property string error: ""
 
+  // A stable key avoids restarting when the service refreshes the same accounts.
+  readonly property string accountKey: {
+    var source = accountId !== "" && accountId !== "all" ? [{ id: accountId }] : (accounts || [])
+    var ids = []
+    for (var i = 0; i < source.length && i < Model.maximumAccountCount; i++) {
+      var id = Model.boundedString(source[i] && source[i].id, Model.remoteIdCharacterLimit).trim()
+      if (/^[1-9]\d*$/.test(id)) ids.push(id)
+    }
+    return ids.join(",")
+  }
+
   property int _revision: 0
   property int _requestRevision: 0
   property bool _requestActive: false
+  property string _requestAccountId: ""
+  property var _pendingAccounts: []
+  property var _pendingResults: []
 
   signal authenticationRequired()
 
@@ -28,12 +42,14 @@ Item {
     restart()
   }
   onReadyChanged: restart()
-  onAccountIdChanged: restart()
+  onAccountKeyChanged: restart()
   onActiveChanged: restart()
 
   function restart() {
     _revision++
     results = []
+    _pendingResults = []
+    _pendingAccounts = accountKey === "" ? [] : accountKey.split(",")
     error = ""
     debounce.stop()
     searching = active && (ready || submitted)
@@ -53,9 +69,19 @@ Item {
     // A stopped process can take time to exit. Its exit handler starts the
     // latest query if the typing delay has already elapsed by then.
     if (_requestActive || !searching) return
+    if (_pendingAccounts.length === 0) {
+      searching = false
+      error = "No HEY accounts available. Refresh and try again."
+      return
+    }
+    // The CLI's search rows omit account IDs, and a running TUI only switches
+    // accounts for numeric IDs. Read each account in its own known context.
+    // ponytail: accounts run serially; parallelize if multi-account latency warrants it.
+    _requestAccountId = _pendingAccounts[0]
+    _pendingAccounts = _pendingAccounts.slice(1)
     _requestRevision = _revision
     _requestActive = true
-    searchProcess.command = Model.searchCommand(term, accountId)
+    searchProcess.command = Model.searchCommand(term, _requestAccountId)
     searchProcess.running = true
   }
 
@@ -76,16 +102,28 @@ Item {
         return
       }
 
-      root.searching = false
       var parsed = exitCode === 0
-        ? Model.parseSearchResults(searchStdout.text, root.accountId, root.accounts)
+        ? Model.parseSearchResults(searchStdout.text, root._requestAccountId, root.accounts)
         : Model.parseFailure(searchStdout.text, searchStderr.text)
       if (!parsed.ok) {
+        root.searching = false
+        root._pendingResults = []
+        root._pendingAccounts = []
         root.error = exitCode === 124 ? "Search timed out. Try again." : parsed.error
         if (Model.isAuthError(parsed.code)) root.authenticationRequired()
         return
       }
-      root.results = parsed.items
+      var items = root._pendingResults.concat(parsed.items)
+      if (root._pendingResults.length > 0 && parsed.items.length > 0)
+        items.sort(function(a, b) { return b.timestampMs - a.timestampMs })
+      root._pendingResults = items.slice(0, Model.maximumPostingCount)
+      if (root._pendingAccounts.length > 0) {
+        root.runSearch()
+        return
+      }
+      root.results = root._pendingResults
+      root._pendingResults = []
+      root.searching = false
     }
   }
 }

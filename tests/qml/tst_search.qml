@@ -11,7 +11,10 @@ TestCase {
 
   Component {
     id: searchComponent
-    Search { active: true }
+    Search {
+      active: true
+      accounts: [{ id: "1", name: "Personal" }]
+    }
   }
 
   SignalSpy {
@@ -58,7 +61,7 @@ TestCase {
     compare(request.running, false, "typing restarts the delay")
     tryCompare(request, "running", true, 1000)
     compare(Model.capturedCommandPayload(request.command),
-      ["hey", "search", "--account", "all", "--json", "--", "abcd"])
+      ["hey", "search", "--account", "1", "--json", "--", "abcd"])
     request.complete(0, matches, "")
     compare(search.searching, false)
     compare(search.results[0].title, "Kitchen remodel")
@@ -131,7 +134,10 @@ TestCase {
   }
 
   function test_stale_results_and_failures_cannot_replace_the_latest_query() {
+    search.accounts = [{ id: "1", name: "Personal" }, { id: "42", name: "Work" }]
     var request = start("kitchen")
+    request.complete(0, matches, "")
+    compare(search.results.length, 0, "wait for every account before publishing results")
     request.deferExit = true
     search.query = "cabinet"
     wait(350)
@@ -150,6 +156,7 @@ TestCase {
     compare(authRequired.count, 0)
     compare(request.running, false, "the new query still gets its typing delay")
     tryCompare(request, "running", true, 1000)
+    request.complete(0, '{"ok":true,"data":[]}', "")
     request.complete(0, '{"ok":true,"data":[]}', "")
     compare(search.results.length, 0)
     compare(search.searching, false)
@@ -173,7 +180,7 @@ TestCase {
   }
 
   function test_account_changes_reissue_the_query_with_the_new_scope() {
-    search.accounts = [{ id: "42", name: "Work" }]
+    search.accounts = [{ id: "1", name: "Personal" }, { id: "42", name: "Work" }]
     var request = start("kitchen")
     request.deferExit = true
     search.accountId = "42"
@@ -185,6 +192,70 @@ TestCase {
     request.complete(0, matches, "")
     compare(search.results[0].accountId, "42")
     compare(search.results[0].accountName, "Work")
+  }
+
+  function test_all_accounts_keep_numeric_context_and_merge_under_the_result_limit() {
+    search.accounts = [{ id: "1", name: "Personal" }, { id: "42", name: "Work" }]
+    var request = start("kitchen")
+    compare(Model.capturedCommandPayload(request.command)[3], "1")
+    var older = []
+    for (var i = 0; i < Model.maximumPostingCount; i++) {
+      older.push({ topic_id: i + 1, subject: "Older match", updated_at: "2026-08-01T12:00:00Z" })
+    }
+    request.complete(0, JSON.stringify({ ok: true, data: older }), "")
+    compare(search.searching, true)
+    compare(search.results.length, 0)
+    compare(request.running, true)
+    compare(Model.capturedCommandPayload(request.command)[3], "42")
+    request.complete(0, '{"ok":true,"data":[{"topic_id":331,"subject":"New match","updated_at":"2026-08-18T12:00:00Z"}]}', "")
+
+    compare(search.searching, false)
+    compare(search.results.length, Model.maximumPostingCount)
+    compare(search.results[0].accountId, "42")
+    compare(search.results[0].accountName, "Work")
+    compare(search.results[0].title, "New match")
+    compare(search.results[1].accountId, "1")
+    compare(search.results[1].accountName, "Personal")
+    var personal = search.results[1]
+    compare(Model.tuiRemoteCommand(Model.topicIdFromUrl(personal.url), personal.accountId, personal.title).slice(0, 3),
+      ["hey", "--account", "1"], "a Personal result can switch an existing Work TUI")
+  }
+
+  function test_failed_account_discards_partial_results_and_retry_reads_every_account() {
+    search.accounts = [{ id: "1", name: "Personal" }, { id: "42", name: "Work" }]
+    var request = start("kitchen")
+    request.complete(0, matches, "")
+    request.complete(6, "", '{"ok":false,"code":"network","error":"Network unavailable"}')
+    compare(search.searching, false)
+    compare(search.results.length, 0)
+    compare(search.error, "Network unavailable")
+
+    search.restart()
+    tryCompare(request, "running", true, 1000)
+    compare(Model.capturedCommandPayload(request.command)[3], "1")
+    request.complete(0, '{"ok":true,"data":[]}', "")
+    compare(Model.capturedCommandPayload(request.command)[3], "42")
+    request.complete(0, matches, "")
+    compare(search.results.length, 1)
+    compare(search.results[0].accountId, "42")
+    compare(search.error, "")
+  }
+
+  function test_search_resumes_when_accounts_arrive_and_ignores_unchanged_account_ids() {
+    search.accounts = [{ id: "all" }, { id: "invalid" }]
+    search.query = "kitchen"
+    tryCompare(search, "searching", false, 1000)
+    compare(process().running, false)
+    compare(search.error, "No HEY accounts available. Refresh and try again.")
+
+    search.accounts = [{ id: "1", name: "Personal" }]
+    var request = process()
+    tryCompare(request, "running", true, 1000)
+    request.complete(0, matches, "")
+    search.accounts = [{ id: "1", name: "Personal" }]
+    wait(350)
+    compare(request.running, false, "background account refreshes must not rerun the search")
+    compare(search.results.length, 1)
   }
 
   function test_closing_cancels_pending_and_running_searches_then_reopens() {

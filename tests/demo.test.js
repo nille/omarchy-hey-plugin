@@ -95,7 +95,7 @@ test("demo CLI keeps seen state for subsequent refreshes", () => {
 
 test("demo search finds subjects, previews, and senders in the selected account", () => {
   withState(stateDir => {
-    function search(query, account = "") {
+    function search(query, account = "1001") {
       const command = Model.capturedCommandPayload(Model.searchCommand(query, account))
       const result = demo(command.slice(1), stateDir)
       assert.equal(result.status, 0, result.stderr)
@@ -103,8 +103,10 @@ test("demo search finds subjects, previews, and senders in the selected account"
     }
     assert.equal(search("FRIDAY")[0].title, "Plans for Friday")
     assert.equal(search("lunch")[0].url, "https://app.hey.com/topics/10501")
-    assert.equal(search("Maya")[0].creator, "Maya Chen")
-    assert.equal(search("Maya", "1002").length, 1)
+    const workMatches = search("Maya", "1002")
+    assert.equal(workMatches.length, 1)
+    assert.equal(workMatches[0].creator, "Maya Chen")
+    assert.equal(workMatches[0].accountId, "1002")
     assert.equal(search("Maya", "1001").length, 0)
     assert.equal(search("no matching message").length, 0)
     assert.equal(search("--help").length, 0)
@@ -146,7 +148,7 @@ test("demo CLI accepts the terminal commands emitted by the plugin", () => {
       ["tui", "--instance", "omarchy", "--screener"],
       ["tui", "--instance", "omarchy", "--screener", "--remote"],
       ["--account", "1001", "tui", "--instance", "omarchy", "--topic", "501"],
-      ["--account", "all", "tui", "--instance", "omarchy", "--topic", "10501"],
+      ["--account", "1001", "tui", "--instance", "omarchy", "--topic", "10501"],
       ["--account", "1001", "tui", "--instance", "omarchy", "--topic", "501", "--topic-title", "Plans for Friday", "--remote"]
     ]) {
       const result = demo(args, stateDir)

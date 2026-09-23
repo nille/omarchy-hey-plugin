@@ -168,7 +168,7 @@ def valid_tui_command(args):
 
     prefix = args[:tui_index]
     if prefix and not (len(prefix) == 2 and prefix[0] == "--account"
-                       and (prefix[1] == "all" or (prefix[1].isdigit() and int(prefix[1]) > 0))):
+                       and prefix[1].isdigit() and int(prefix[1]) > 0):
         return False
 
     values = {}

@@ -268,7 +268,7 @@ function boxCommand(limit, withAccountFilter) {
 function searchCommand(query, accountId) {
   // ponytail: live search reads one page; add pagination when browsing more is needed.
   return boundedCaptureCommand(
-    ["hey", "search", "--account", String(accountId || "all"), "--json", "--", String(query || "").trim()],
+    ["hey", "search", "--account", String(accountId), "--json", "--", String(query || "").trim()],
     cliResponseByteLimit, cliErrorByteLimit)
 }
 
@@ -362,8 +362,8 @@ function tuiRemoteCommand(topicId, accountId, title) {
   var topic = positiveId(topicId)
   if (topic === 0) return []
   var command = ["hey"]
-  var account = accountId === "all" ? "all" : positiveId(accountId)
-  if (account) command.push("--account", String(account))
+  var account = positiveId(accountId)
+  if (account > 0) command.push("--account", String(account))
   command.push("tui", "--instance", "omarchy", "--topic", String(topic))
   var topicTitle = cleanText(title, remoteTitleCharacterLimit)
   if (topicTitle !== "") command.push("--topic-title", topicTitle)
@@ -373,8 +373,8 @@ function tuiRemoteCommand(topicId, accountId, title) {
 
 function tuiFocusCommand(topicId, accountId, title) {
   var command = ["omarchy-launch-or-focus-tui", "--app-id=org.omarchy.hey", "hey"]
-  var account = accountId === "all" ? "all" : positiveId(accountId)
-  if (account) command.push("--account", String(account))
+  var account = positiveId(accountId)
+  if (account > 0) command.push("--account", String(account))
   command.push("tui", "--instance", "omarchy")
   var topic = positiveId(topicId)
   if (topic > 0) command.push("--topic", String(topic))
@@ -606,9 +606,10 @@ function parseSearchResults(raw, accountId, accounts) {
   if (!result.ok) return result
   if (!Array.isArray(result.value.data)) return { ok: false, error: "The HEY CLI returned invalid search results" }
 
-  // Search does not expose account or seen state. Keep the requested account
-  // scope for opening topics, and leave unknown read state unmarked.
-  var selectedAccount = boundedString(accountId || "all", remoteIdCharacterLimit)
+  // Search omits account and seen state. Every page must come from a known
+  // account so the TUI can switch to it; unknown read state stays unmarked.
+  var selectedAccount = boundedString(accountId, remoteIdCharacterLimit).trim()
+  if (!/^[1-9]\d*$/.test(selectedAccount)) return { ok: false, error: "The HEY search account is missing or invalid" }
   var accountName = ""
   var source = Array.isArray(accounts) ? accounts.slice(0, maximumAccountCount) : []
   for (var a = 0; a < source.length; a++) {

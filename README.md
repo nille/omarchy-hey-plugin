@@ -59,7 +59,7 @@ Plugin removal unloads HEY and removes its checkout. The HEY CLI installation, i
 - Left-click the HEY logo to open or close the panel.
 - Right-click or middle-click the logo to refresh.
 - Select `New for you` or `Previously seen` below the account dropdown.
-- Select `Search` or press `/`, then type your query. Results update after a 300 ms typing pause once you enter 3 characters. Press Enter to search a shorter query. Results follow the selected account, cover HEY email beyond the Imbox, and show the first page of matches. Opening a result clears the query, returns to `New for you`, and closes the panel.
+- Select `Search` or press `/`, then type your query. Results update after a 300 ms typing pause once you enter 3 characters. Press Enter to search a shorter query. Results cover HEY email beyond the Imbox and follow the selected account. `All accounts` combines the first page from each linked account, showing up to 50 matches with their account names. Opening a result clears the query, returns to `New for you`, and closes the panel.
 - Pick an account from the dropdown when more than one account is linked. A dot on the dropdown shows unread email in other accounts.
 - Click an email to open it in HEY and mark it as seen. A Bubbled Up email stays bubbled when opened. Click the count badge to mark an email as seen without opening it, which also pops a Bubbled Up email.
 - Click the cog to flip the panel to its settings. The back arrow returns to email.
@@ -121,11 +121,11 @@ hey auth status --json
 hey account list --json
 hey accounts list --json  # HEY CLI 0.2.2 compatibility
 hey box imbox --account all --limit <count> --json
-hey search --account <id|all> --json -- <query>
+hey search --account <id> --json -- <query>
 hey --account all watch --events added,updated,deleted,new,resync
 hey screener list --count --json
 hey seen <posting-id> [--account <id>] --json
-hey [--account <id|all>] tui --instance omarchy --topic <topic-id> [--remote]
+hey [--account <id>] tui --instance omarchy --topic <topic-id> [--remote]
 hey tui --instance omarchy --screener [--remote]
 flock -n <private runtime directory descriptor>
 omarchy-notification-send --app-name HEY -u low --exec <configured HEY terminal, app, or browser command> <headline> [description] -i hey -p [-r <id>]

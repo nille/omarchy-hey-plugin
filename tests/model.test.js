@@ -80,9 +80,9 @@ test("searchCommand keeps arbitrary queries positional and scopes the request", 
     assert.deepEqual(Model.capturedCommandPayload(Model.searchCommand(query, "42")),
       ["hey", "search", "--account", "42", "--json", "--", query])
   }
-  const command = Model.searchCommand("  invoice  ", "")
+  const command = Model.searchCommand("  invoice  ", "42")
   assert.deepEqual(Model.capturedCommandPayload(command),
-    ["hey", "search", "--account", "all", "--json", "--", "invoice"])
+    ["hey", "search", "--account", "42", "--json", "--", "invoice"])
   assert.equal(command[11], String(Model.finiteCommandTimeoutSec))
 })
 
@@ -116,7 +116,7 @@ test("search results preserve HEY order, matching previews, and topic identity",
 })
 
 test("search handles empty, malformed, oversized, and sparse responses", () => {
-  assert.deepEqual(Model.parseSearchResults('{"ok":true,"data":[]}').items, [])
+  assert.deepEqual(Model.parseSearchResults('{"ok":true,"data":[]}', "42").items, [])
   for (const raw of ["not json", '{"ok":true,"data":{}}', "x".repeat(Model.cliResponseByteLimit + 1)]) {
     assert.equal(Model.parseSearchResults(raw).ok, false)
   }
@@ -126,12 +126,12 @@ test("search handles empty, malformed, oversized, and sparse responses", () => {
     null, { id: 7 }, { topic_id: 0 },
     { topic_id: 332 },
     { topic_id: 333, messages: [{ created_at: "2026-08-18T12:00:00Z", creator: { email_address: "jane@example.com" } }] }
-  ] }))
+  ] }), "42")
   assert.equal(parsed.items.length, 2)
   assert.equal(parsed.items[0].title, "HEY email")
   assert.equal(parsed.items[0].timestampMs, 0)
   assert.equal(parsed.items[0].initials, "?")
-  assert.equal(parsed.items[0].accountId, "all")
+  assert.equal(parsed.items[0].accountId, "42")
   assert.equal(parsed.items[1].timestampMs, Date.parse("2026-08-18T12:00:00Z"))
   assert.equal(parsed.items[1].creator, "jane@example.com")
 
@@ -140,7 +140,7 @@ test("search handles empty, malformed, oversized, and sparse responses", () => {
       topic_id: i + 1, id: "i".repeat(100), subject: "s".repeat(500),
       messages: [{ summary: "p".repeat(1000), creator: { name: "n".repeat(500) } }]
     }))
-  }))
+  }), "42")
   assert.equal(bounded.items.length, Model.maximumPostingCount)
   assert.equal(bounded.items[0].id.length, Model.remoteIdCharacterLimit)
   assert.equal(bounded.items[0].title.length, Model.remoteTitleCharacterLimit)
@@ -148,11 +148,16 @@ test("search handles empty, malformed, oversized, and sparse responses", () => {
   assert.equal(bounded.items[0].creator.length, Model.remoteNameCharacterLimit)
 })
 
-test("all-account search topics pass an explicit account scope to the TUI", () => {
-  assert.deepEqual(Model.tuiRemoteCommand(331, "all", "Kitchen remodel"),
-    ["hey", "--account", "all", "tui", "--instance", "omarchy", "--topic", "331", "--topic-title", "Kitchen remodel", "--remote"])
-  assert.deepEqual(Model.tuiFocusCommand(331, "all"),
-    ["omarchy-launch-or-focus-tui", "--app-id=org.omarchy.hey", "hey", "--account", "all", "tui", "--instance", "omarchy", "--topic", "331"])
+test("search topics retain a numeric account for remote TUI switching", () => {
+  const response = JSON.stringify({ ok: true, data: [{ topic_id: 331, subject: "Kitchen remodel" }] })
+  for (const account of ["", "all", "invalid", "42suffix", "0"]) {
+    assert.equal(Model.parseSearchResults(response, account).ok, false)
+  }
+  const item = Model.parseSearchResults(response, "42").items[0]
+  assert.deepEqual(Model.tuiRemoteCommand(Model.topicIdFromUrl(item.url), item.accountId, item.title),
+    ["hey", "--account", "42", "tui", "--instance", "omarchy", "--topic", "331", "--topic-title", "Kitchen remodel", "--remote"])
+  assert.deepEqual(Model.tuiFocusCommand(Model.topicIdFromUrl(item.url), item.accountId),
+    ["omarchy-launch-or-focus-tui", "--app-id=org.omarchy.hey", "hey", "--account", "42", "tui", "--instance", "omarchy", "--topic", "331"])
 })
 
 test("watchCommand follows every box without a finite-command deadline", () => {
